@@ -48,12 +48,16 @@ func (az *ACRHelper) List() (map[string]string, error) {
 	return map[string]string{}, nil
 }
 
+// getCredentials Fetches credentials for an Azure container registry
 func getCredentials(registryID string) (string, string, error) {
+	// Use default azure credential provider to support both
+	// logged in cli and managed identity.
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		log.Fatalf("failed to obtain a credential: %v", err)
 	}
 
+	// Fetch JWT token for authenticating with registry.
 	token, err := cred.GetToken(
 		context.Background(),
 		policy.TokenRequestOptions{Scopes: []string{"https://management.azure.com/.default"}},
@@ -62,11 +66,17 @@ func getCredentials(registryID string) (string, string, error) {
 		return "", "", fmt.Errorf("failed to obtain token: %v", err)
 	}
 
+	// We need the tenant ID to authenticate with the registry.
+	// We can pull the tenant ID out of the JWT token.
+	// This assumes the registry is in the same tenant as our
+	// authenticated credential.
+	// TODO: support different tenant ID.
 	tenantID, err := getTenantID(token.Token)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to extract tenant id from token: %v\n", err)
 	}
 
+	// Authenticate with azure container registry.
 	formData := url.Values{
 		"grant_type":   {"access_token"},
 		"service":      {registryID},
@@ -78,6 +88,7 @@ func getCredentials(registryID string) (string, string, error) {
 		return "", "", err
 	}
 
+	// Decode response and return refresh token.
 	var response map[string]interface{}
 	err = json.NewDecoder(jsonResponse.Body).Decode(&response)
 	if err != nil {
@@ -97,6 +108,7 @@ func getCredentials(registryID string) (string, string, error) {
 	return DOCKER_USER, rt, nil
 }
 
+// getTenantID Fetches the Tenant ID out of JWT's claims
 func getTenantID(token string) (string, error) {
 	parts := strings.Split(token, ".")
 	claimPart := parts[1]
