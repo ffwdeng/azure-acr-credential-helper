@@ -28,7 +28,7 @@ Starting with docker 1.13 you can set a credential store per registry. To use `d
 
 ```json
 {
-	"credHelpers" {
+	"credHelpers": {
 		"<acr_id>.azurecr.io": "acr-login"
 	}
 }
