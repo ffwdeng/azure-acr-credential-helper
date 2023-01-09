@@ -1,0 +1,33 @@
+builds:
+  - main: ./cmd/docker-credential-acr-login
+    binary: docker-credential-acr-login
+    env:
+    - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+before:
+  hooks:
+    - go mod tidy
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ .Tag }}-next"
+
+archives:
+  - id: bin
+    format: binary
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+    - '^docs:'
+    - '^test:'
