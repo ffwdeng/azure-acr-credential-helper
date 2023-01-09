@@ -17,7 +17,12 @@ import (
 	"github.com/docker/docker-credential-helpers/credentials"
 )
 
-var notImplemented error = errors.New("not implemented")
+var (
+	ErrNotImplemented      error = errors.New("not implemented")
+	ErrUnsupportedRegistry error = errors.New("unsupported registry")
+	ErrNoTenantIDClaim     error = errors.New("claim 'tid' not presend in token")
+	ErrTenantIDNotString   error = errors.New("claim 'tid' is not a string in token")
+)
 
 // This docker user should be used for ACR login when using JWT token as password
 const DOCKER_USER string = "00000000-0000-0000-0000-000000000000"
@@ -30,18 +35,18 @@ func (az *ACRHelper) Get(serverURL string) (string, string, error) {
 	registry := regex.FindString(serverURL)
 
 	if registry == "" {
-		return "", "", fmt.Errorf("unsupported registry")
+		return "", "", ErrUnsupportedRegistry
 	}
 
 	return getCredentials(registry)
 }
 
 func (az *ACRHelper) Add(creds *credentials.Credentials) error {
-	return notImplemented
+	return ErrNotImplemented
 }
 
 func (az *ACRHelper) Delete(serverURL string) error {
-	return notImplemented
+	return ErrNotImplemented
 }
 
 func (az *ACRHelper) List() (map[string]string, error) {
@@ -126,12 +131,12 @@ func getTenantID(token string) (string, error) {
 
 	val, ok := claims["tid"]
 	if !ok {
-		return "", fmt.Errorf("claim 'tid' not present in token")
+		return "", ErrNoTenantIDClaim
 	}
 
 	tid, ok := val.(string)
 	if !ok {
-		return "", fmt.Errorf("claim 'tid' is not a string in token")
+		return "", ErrTenantIDNotString
 	}
 
 	return tid, nil
