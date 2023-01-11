@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 
@@ -22,6 +23,7 @@ var (
 	ErrUnsupportedRegistry error = errors.New("unsupported registry")
 	ErrNoTenantIDClaim     error = errors.New("claim 'tid' not presend in token")
 	ErrTenantIDNotString   error = errors.New("claim 'tid' is not a string in token")
+	ErrAuthFailed          error = errors.New("authentication failed")
 )
 
 // This docker user should be used for ACR login when using JWT token as password
@@ -30,15 +32,20 @@ const DOCKER_USER string = "00000000-0000-0000-0000-000000000000"
 type ACRHelper struct{}
 
 func (az *ACRHelper) Get(serverURL string) (string, string, error) {
-	// registry must be *.azurecr.io for us to be able to authenticate
-	regex := regexp.MustCompile(`[[a-zA-Z0-9\-]+\.azurecr\.io`)
-	registry := regex.FindString(serverURL)
+	logger := log.New(os.Stderr, "", 0)
 
-	if registry == "" {
-		return "", "", ErrUnsupportedRegistry
+	registry, err := extractRegistry(serverURL)
+	if err != nil {
+		return "", "", credentials.NewErrCredentialsNotFound()
 	}
 
-	return getCredentials(registry)
+	user, pass, err := getCredentials(registry)
+	if err != nil {
+		logger.Print(err)
+		return "", "", credentials.NewErrCredentialsNotFound()
+	}
+
+	return user, pass, nil
 }
 
 func (az *ACRHelper) Add(creds *credentials.Credentials) error {
@@ -59,7 +66,7 @@ func getCredentials(registryID string) (string, string, error) {
 	// logged in cli and managed identity.
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		log.Fatalf("failed to obtain a credential: %v", err)
+		return "", "", fmt.Errorf("%s: %s", ErrAuthFailed.Error(), err)
 	}
 
 	// Fetch JWT token for authenticating with registry.
@@ -68,7 +75,7 @@ func getCredentials(registryID string) (string, string, error) {
 		policy.TokenRequestOptions{Scopes: []string{"https://management.azure.com/.default"}},
 	)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to obtain token: %v", err)
+		return "", "", fmt.Errorf("%s: failed to obtain token: %s", ErrAuthFailed.Error(), err)
 	}
 
 	// We need the tenant ID to authenticate with the registry.
@@ -78,7 +85,7 @@ func getCredentials(registryID string) (string, string, error) {
 	// TODO: support different tenant ID.
 	tenantID, err := getTenantID(token.Token)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to extract tenant id from token: %v\n", err)
+		return "", "", fmt.Errorf("%s: failed to extract tenant id from token: %s", ErrAuthFailed.Error(), err)
 	}
 
 	// Authenticate with azure container registry.
@@ -90,7 +97,7 @@ func getCredentials(registryID string) (string, string, error) {
 	}
 	jsonResponse, err := http.PostForm(fmt.Sprintf("https://%s/oauth2/exchange", registryID), formData)
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("%s: %s", ErrAuthFailed.Error(), err)
 	}
 
 	// Decode response and return refresh token.
@@ -102,12 +109,12 @@ func getCredentials(registryID string) (string, string, error) {
 
 	val, ok := response["refresh_token"]
 	if !ok {
-		return "", "", fmt.Errorf("unable to get refresh token")
+		return "", "", fmt.Errorf("%s: unable to get refresh token", ErrAuthFailed.Error())
 	}
 
 	rt, ok := val.(string)
 	if !ok {
-		return "", "", fmt.Errorf("unable to cast refresh token to string")
+		return "", "", fmt.Errorf("%s: unable to cast refresh token to string", ErrAuthFailed.Error())
 	}
 
 	return DOCKER_USER, rt, nil
@@ -140,4 +147,16 @@ func getTenantID(token string) (string, error) {
 	}
 
 	return tid, nil
+}
+
+func extractRegistry(serverURL string) (string, error) {
+	// registry must be *.azurecr.io for us to be able to authenticate
+	regex := regexp.MustCompile(`[[a-zA-Z0-9\-]+\.azurecr\.io`)
+	registry := regex.FindString(serverURL)
+
+	if registry == "" {
+		return "", ErrUnsupportedRegistry
+	}
+
+	return registry, nil
 }
