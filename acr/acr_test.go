@@ -82,3 +82,21 @@ func TestGetTenantIDWithoutTenantID(t *testing.T) {
 		t.Fatalf("expected error 'ErrNoTenantIDClaim', got error: %s", err)
 	}
 }
+
+func TestExtractRegistryValid(t *testing.T) {
+	registry, err := extractRegistry("myregistry.azurecr.io/image")
+	if err != nil {
+		t.Fatalf("got unexpected error: %s", err)
+	}
+
+	if registry != "myregistry.azurecr.io" {
+		t.Fatalf("wrong registry url parsed: %s != 'myregistry.azurecr.io'", registry)
+	}
+}
+
+func TestExtractRegistryInvalid(t *testing.T) {
+	_, err := extractRegistry("docker.io/alpine")
+	if err == nil {
+		t.Fatalf("expected error but got none")
+	}
+}
